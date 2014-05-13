@@ -48,7 +48,8 @@ import java.util.Map;
 import static org.elasticsearch.action.search.SearchType.QUERY_THEN_FETCH;
 import static org.elasticsearch.client.Requests.searchRequest;
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
-import static org.elasticsearch.index.query.FilterBuilders.*;
+import static org.elasticsearch.index.query.FilterBuilders.missingFilter;
+import static org.elasticsearch.index.query.FilterBuilders.typeFilter;
 import static org.elasticsearch.index.query.QueryBuilders.*;
 import static org.elasticsearch.search.builder.SearchSourceBuilder.highlight;
 import static org.elasticsearch.search.builder.SearchSourceBuilder.searchSource;
@@ -645,11 +646,43 @@ public class HighlighterSearchTests extends ElasticsearchIntegrationTest {
                 .query(boolQuery().should(constantScoreQuery(prefixQuery("_all", "qui"))))
                 .from(0).size(60).explain(true)
                 .highlight(highlight().field("field2").order("score").preTags("<xxx>").postTags("</xxx>"));
-
+ 
         searchResponse = client().search(searchRequest("test").source(source).searchType(QUERY_THEN_FETCH)).actionGet();
         assertHighlight(searchResponse, 0, "field2", 0, 1, equalTo("The <xxx>quick</xxx> brown fox jumps over the lazy dog"));
     }
+    
+    @Test
+    public void testPlainHighlighterDocumentAnalyzer() throws Exception {
+        client().admin().indices().prepareCreate("test")
+        .addMapping("type1", XContentFactory.jsonBuilder().startObject().startObject("type1")
+            .startObject("_analyzer")
+                .field("path", "language_analyzer")
+            .endObject()
+            .startObject("properties")
+                .startObject("language_analyzer")
+                    .field("type", "string")
+                    .field("index", "not_analyzed")
+                .endObject()
+                .startObject("text")
+                    .field("type", "string")
+                .endObject()
+            .endObject()
+            .endObject().endObject()).execute().actionGet();
+        ensureYellow();
+        
+        index("test", "type1", "1",
+                "language_analyzer", "english",
+                "text", "Look at me, I'm eating cars.");
+        refresh();
 
+        SearchResponse response = client().prepareSearch("test")
+                .setQuery(QueryBuilders.matchQuery("text", "car"))
+                .addHighlightedField(
+                        new HighlightBuilder.Field("text").preTags("<1>").postTags("</1>").requireFieldMatch(true))
+                .get();
+        assertHighlight(response, 0, "text", 0, 1, equalTo("Look at me, I'm eating <1>cars</1>."));
+    }
+    
     @Test
     public void testFastVectorHighlighter() throws Exception {
         assertAcked(client().admin().indices().prepareCreate("test").addMapping("type1", type1TermVectorMapping()));
