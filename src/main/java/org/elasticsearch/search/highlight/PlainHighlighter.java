@@ -106,7 +106,8 @@ public class PlainHighlighter implements Highlighter {
         Analyzer analyzer = null;
         if (documentLanguageAnalyzer != null){
             analyzer = context.mapperService().analysisService().analyzer(documentLanguageAnalyzer);
-        }else{
+        }
+        if(analyzer == null){
             analyzer = context.mapperService().documentMapper(hitContext.hit().type()).mappers().indexAnalyzer();  
         }
         
